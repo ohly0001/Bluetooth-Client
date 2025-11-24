@@ -34,7 +34,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.bluetooth_client.ui.theme.Bluetooth_ClientTheme
@@ -106,7 +105,7 @@ class MainActivity : ComponentActivity() {
             super.onCharacteristicWrite(gatt, characteristic, status)
 
             val str = String(characteristic!!.value)
-            Log.d(TAG, "Characteristic written: ${str}")
+            Log.d(TAG, "Characteristic written: $str")
         }
 
         //step 13a:
@@ -195,7 +194,6 @@ class MainActivity : ComponentActivity() {
                     scanner?.stopScan(object: ScanCallback() {
                         override fun onScanResult(callbackType: Int, result: ScanResult?) {
                             super.onScanResult(callbackType, result)
-
                         }
                         override fun onScanFailed(errorCode: Int) {
                             super.onScanFailed(errorCode)
@@ -272,7 +270,6 @@ fun Greeting(modifier: Modifier = Modifier) {
 
     val foundUUID =remember{ mutableStateOf("")}
     val cntxt = LocalContext.current
-    val haptic = LocalHapticFeedback.current
     val view = LocalView.current
 
     Column(modifier = modifier) {

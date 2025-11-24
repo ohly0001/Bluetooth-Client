@@ -21,6 +21,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
+import androidx.annotation.RequiresPermission
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -55,6 +57,7 @@ class MainActivity : ComponentActivity() {
     private val connectedCallback = object : BluetoothGattCallback() {
 
         //This gets called when the client either connects or disconnects from a Server:
+        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
 
             when(newState)
@@ -108,6 +111,7 @@ class MainActivity : ComponentActivity() {
 
         //step 13a:
         //This gets called whenever someone else changes a Characteristic on the server:
+        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
         override fun onCharacteristicChanged(
             gatt: BluetoothGatt?,
             characteristic: BluetoothGattCharacteristic?
@@ -125,6 +129,7 @@ class MainActivity : ComponentActivity() {
 
 
         //Part of Step 8, called when discoverServices() has finished:
+        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
         override fun onServicesDiscovered(
             gatt: BluetoothGatt?,
             status: Int
@@ -155,6 +160,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.R)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -181,6 +187,7 @@ class MainActivity : ComponentActivity() {
         val scanCallback = object : ScanCallback() {
 
             //This gets called for every device found:
+            @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
             override fun onScanResult(callbackType: Int, result: ScanResult?) {
                 super.onScanResult(callbackType, result)
 
@@ -229,7 +236,7 @@ class MainActivity : ComponentActivity() {
 
         val requestPermissionLauncher =
             registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-                    isGranted    ->
+                isGranted ->
                 if (isGranted.values.all { it }) {
 
                     ///Step 4
@@ -259,6 +266,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@RequiresApi(Build.VERSION_CODES.R)
 @Composable
 fun Greeting(modifier: Modifier = Modifier) {
 
@@ -304,6 +312,7 @@ fun Greeting(modifier: Modifier = Modifier) {
     }
 }
 
+@RequiresApi(Build.VERSION_CODES.R)
 @Preview(showBackground = true)
 @Composable
 fun GreetingPreview() {

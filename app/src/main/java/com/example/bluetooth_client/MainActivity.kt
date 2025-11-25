@@ -24,11 +24,16 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.annotation.RequiresPermission
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -267,21 +272,23 @@ class MainActivity : ComponentActivity() {
 @RequiresApi(Build.VERSION_CODES.R)
 @Composable
 fun Greeting(modifier: Modifier = Modifier) {
-
-    val foundUUID =remember{ mutableStateOf("")}
-    val cntxt = LocalContext.current
+    val txtMsg = remember { mutableStateOf("") }
+    val foundUUID = remember { mutableStateOf("")}
+    val ctx = LocalContext.current
     val view = LocalView.current
+    val messages = remember { mutableListOf<String>() } //ref lab 7
+    //TODO send msg to server, get automatic response back
 
     Column(modifier = modifier) {
         //This button opens the QR scanner:
         Button(onClick = {
             val options = GmsBarcodeScannerOptions.Builder()
                 .setBarcodeFormats(
-                    Barcode.FORMAT_QR_CODE // You can add other formats here: Barcode.FORMAT_AZTEC
+                    Barcode.FORMAT_QR_CODE
                 )
                 .build()
 
-            val scanner = GmsBarcodeScanning.getClient(cntxt, options)
+            val scanner = GmsBarcodeScanning.getClient(ctx, options)
 
             scanner.startScan()
                 .addOnSuccessListener { barcode ->
@@ -304,8 +311,28 @@ fun Greeting(modifier: Modifier = Modifier) {
         }
 
         //when the UUID string is not empty, show the UUID:
-        if(foundUUID.value.isNotEmpty())
+        if(foundUUID.value.isNotEmpty()) {
             Text("Scanned UUID: ${foundUUID.value}")
+            LazyColumn {
+                items(messages.size) { index ->
+                    Text(text = "Item: ${items[index]}")
+                }
+            }
+            Row {
+                TextField(
+                    value = txtMsg.value,
+                    onValueChange = {
+                        txtMsg.value = it
+                    },
+                    placeholder = { Text("Type Here...") }
+                )
+                Button(onClick = {
+                    // Send message somehow
+                }) {
+                    Text("Send")
+                }
+            }
+        }
     }
 }
 

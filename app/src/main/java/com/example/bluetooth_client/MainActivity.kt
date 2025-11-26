@@ -12,6 +12,7 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.ParcelUuid
@@ -25,322 +26,304 @@ import androidx.annotation.RequiresApi
 import androidx.annotation.RequiresPermission
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.tooling.preview.Preview
-import com.example.bluetooth_client.ui.theme.Bluetooth_ClientTheme
+import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import java.util.UUID
 
 class MainActivity : ComponentActivity() {
-
     companion object {
-        const val TAG = "BLUETOOTH_Client"
+        const val TAG = "BLE_CLIENT"
     }
-    private var bluetoothManager:BluetoothManager? = null
+
+    // BLE
+    private var bluetoothManager: BluetoothManager? = null
     private var bluetoothAdapter: BluetoothAdapter? = null
+    private var gatt: BluetoothGatt? = null
+
+    // Dynamic UUID scanned from QR
+    val foundUUID = mutableStateOf("")
+
+    // Track scanning
     private var isScanning = false
 
-    private var gattServer : BluetoothGatt? = null
+    private val messages = mutableListOf<String>()
+    fun getMessages() = messages
 
-    private val connectedCallback = object : BluetoothGattCallback() {
+    // ============
+    // GATT CALLBACK
+    // ============
+    private val gattCallback = object : BluetoothGattCallback() {
 
-        //This gets called when the client either connects or disconnects from a Server:
         @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
 
-            when(newState)
-            {
+            when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
-                    Log.d(TAG, "Connected to GATT server.")
-
-                    //Step 8:
-                    gattServer?.discoverServices() //this will call onServicesDiscovered() in GattCallbacks
-                }
-                BluetoothProfile.STATE_CONNECTING -> {
-                    Log.d(TAG, "Connecting to GATT server.")
+                    Log.d(TAG, "Connected. Discovering services...")
+                    gatt.discoverServices()
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
-                    Log.d(TAG, "Disconnected from GATT server.")
+                    Log.d(TAG, "Disconnected from server")
                 }
             }
         }
 
-
-        //This gets called whenever you request to read a Characteristic on the server:
-        // Step 11a:
-        override fun onCharacteristicRead(
-            gatt: BluetoothGatt?,
-            characteristic: BluetoothGattCharacteristic?,
-            status: Int
-        ) {
-            super.onCharacteristicRead(gatt, characteristic, status)
-            if(status == BluetoothGatt.GATT_SUCCESS)
-                Log.d(TAG, "The current value is: ${String(characteristic!!.value)}")
-
-            //Step 12: writing to the server
-            characteristic!!.setValue("Eric says hello!")
-            gatt!!.writeCharacteristic(characteristic)
-            //end of step 12
-        }
-        //////////////end of step 11a:
-
-
-        //This gets called whenever you request to write to a Characteristic on the server:
-        override fun onCharacteristicWrite(
-            gatt: BluetoothGatt?,
-            characteristic: BluetoothGattCharacteristic?,
-            status: Int
-        ) {
-            super.onCharacteristicWrite(gatt, characteristic, status)
-
-            val str = String(characteristic!!.value)
-            Log.d(TAG, "Characteristic written: $str")
-        }
-
-        //step 13a:
-        //This gets called whenever someone else changes a Characteristic on the server:
         @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-        override fun onCharacteristicChanged(
-            gatt: BluetoothGatt?,
-            characteristic: BluetoothGattCharacteristic?
-        ) {
-            super.onCharacteristicChanged(gatt, characteristic)
+        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+            if (status != BluetoothGatt.GATT_SUCCESS) return
 
-            val str = String(characteristic!!.value)
-            Log.d(TAG, "Characteristic changed: $str")
+            val serviceUUID = getScannedUUID() ?: return
+            val service = gatt.getService(serviceUUID)
 
-            //Step 14
-            gatt?.disconnect()
-            //end of step 14
-        }
-        ////////////////end of step 13a
-
-
-        //Part of Step 8, called when discoverServices() has finished:
-        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-        override fun onServicesDiscovered(
-            gatt: BluetoothGatt?,
-            status: Int
-        ) {
-            super.onServicesDiscovered(gatt, status)
-
-            //Step 9:
-            val service = gatt?.getService(UUID.fromString("0000180D-0000-1000-8000-00805F9B34FB"))
-            if(status == BluetoothGatt.GATT_SUCCESS)
-            {
-
-                val serviceUUID = service!!.uuid
-
-
-                var characteristic = service.getCharacteristic(UUID.fromString("0000180D-0000-1000-8000-00805F9B34FB"))
-
-                //Step 11: Tell server to notify you if characteristic changes
-                gatt.setCharacteristicNotification(characteristic, true)
-
-
-                gatt.readCharacteristic(characteristic) //this triggers onCharacteristicRead( ) when finished
-                //end of step 11
-
-                Log.d(TAG, "Service UUID: $serviceUUID, characteristic UUID:${characteristic.uuid}")
-
-                //  }
+            if (service == null) {
+                Log.e(TAG, "Service $serviceUUID not found on server")
+                return
             }
+
+            val characteristic = service.getCharacteristic(serviceUUID)
+            if (characteristic == null) {
+                Log.e(TAG, "Characteristic $serviceUUID not found")
+                return
+            }
+
+            // Enable notifications
+            gatt.setCharacteristicNotification(characteristic, true)
+
+            Log.d(TAG, "Notifications enabled on $serviceUUID")
+        }
+
+        override fun onCharacteristicChanged(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic
+        ) {
+            val text = String(characteristic.value)
+
+            Log.d(TAG, "Received from server: $text")
+
+            messages.add("Server: $text")
+        }
+
+        override fun onCharacteristicWrite(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            status: Int
+        ) {
+            Log.d(TAG, "Write complete: ${String(characteristic.value)}")
         }
     }
 
+    // ============
+    // SCANNING
+    // ============
     @RequiresApi(Build.VERSION_CODES.R)
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+    private fun startScan() {
+        val uuid = getScannedUUID() ?: return
 
-        bluetoothManager = getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager
-        if(bluetoothManager != null){
-            bluetoothAdapter = bluetoothManager?.adapter
-        }
+        val scanner = bluetoothAdapter?.bluetoothLeScanner ?: return
 
-        //Step 4
-        val scanner = bluetoothAdapter?.bluetoothLeScanner
         val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY) // Fast scanning mode
-            .setReportDelay(0) // Notify devices immediately
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
         val filters = listOf(
             ScanFilter.Builder()
-                //      .setDeviceName("MyBLEDevice") // Optional: Filter by device name
-                .setServiceUuid(ParcelUuid(UUID.fromString("1010281D-1010-1010-8010-10805F9B34FB"))) // Filter by specific service, this should match the advertising UUID from the Server
+                .setServiceUuid(ParcelUuid(uuid))
                 .build()
         )
 
         val scanCallback = object : ScanCallback() {
 
-            //This gets called for every device found:
             @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
-            override fun onScanResult(callbackType: Int, result: ScanResult?) {
-                super.onScanResult(callbackType, result)
+            override fun onScanResult(type: Int, result: ScanResult) {
+                if (!isScanning) return
 
-                if(isScanning){
-                    scanner?.stopScan(object: ScanCallback() {
-                        override fun onScanResult(callbackType: Int, result: ScanResult?) {
-                            super.onScanResult(callbackType, result)
-                        }
-                        override fun onScanFailed(errorCode: Int) {
-                            super.onScanFailed(errorCode)
-                        }
-                    })
-                    isScanning = false
+                isScanning = false
+                scanner.stopScan(this)
 
-                    //If result is not null, you've found a device advertising on that UUID, so connect to it:
-                    result?.let {
-                        val device = result.device
-                        val deviceName = device.name
-                        val deviceAddress = device.address
-                        Log.d("BLE", "Device found: $deviceName ($deviceAddress)")
+                Log.d(TAG, "Found device: ${result.device.address}")
 
-                        //Step 5
-                        gattServer = device.connectGatt(this@MainActivity, false,
-                            connectedCallback, BluetoothDevice.TRANSPORT_LE)
-                        /////////////end of Step 5
-                    }
+                if (ActivityCompat.checkSelfPermission(
+                        this@MainActivity, // <- explicitly refer to the Activity
+                        Manifest.permission.BLUETOOTH_CONNECT
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    // handle permission request
+                    return
                 }
-            }
-            override fun onScanFailed(errorCode: Int) {
-                super.onScanFailed(errorCode)
-                Log.d("BLE", "Stopped bluetooth scan")
 
+                gatt = result.device.connectGatt(
+                    this@MainActivity,
+                    false,
+                    gattCallback,
+                    BluetoothDevice.TRANSPORT_LE
+                )
             }
         }
-        ///end of step 4
+
+        isScanning = true
+        scanner.startScan(filters, settings, scanCallback)
+    }
+
+    // ============
+    // WRITE TO SERVER (called from UI)
+    // ============
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun sendMessage(text: String) {
+        val uuid = getScannedUUID() ?: return
+        val service = gatt?.getService(uuid) ?: return
+        val characteristic = service.getCharacteristic(uuid) ?: return
+
+        characteristic.value = text.toByteArray()
+        gatt?.writeCharacteristic(characteristic)
+    }
+
+    private fun getScannedUUID(): UUID? {
+        return try { UUID.fromString(foundUUID.value) }
+        catch (ex: Exception) { null }
+    }
+
+    // ============
+    // ACTIVITY
+    // ============
+    @RequiresApi(Build.VERSION_CODES.R)
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+
+        bluetoothManager = getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
+        bluetoothAdapter = bluetoothManager?.adapter
+
         setContent {
-            Bluetooth_ClientTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
-            }
+            ClientUI(
+                foundUUID = foundUUID,
+                messages = messages,
+                onScan = { startScan() },
+                onSend = { sendMessage(it) }
+            )
         }
 
-        val requestPermissionLauncher =
-            registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-                isGranted ->
-                if (isGranted.values.all { it }) {
+        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+            arrayOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT
+            )
+        else
+            arrayOf(Manifest.permission.BLUETOOTH)
 
-                    ///Step 4
-                    isScanning = true
-                    scanner?.startScan(filters, settings, scanCallback)
+        requestPermissionsLauncher.launch(permissions)
+    }
 
-                    ///////////////end of Step 4
-                } else {
-                    // Explain to the user that the feature is unavailable because the
-                    // feature requires a permission that the user has denied. At the
-                    // same time, respect the user's decision. Don't link to system
-                    // settings in an effort to convince the user to change their
-                    // decision.
-                }
-            }
-
-        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) //SDK 31 or more
-        {
-            requestPermissionLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT,
-                // Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.BLUETOOTH_SCAN))
-        }
-        else //SDK 30 or less
-        {
-            requestPermissionLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH))
+    private val requestPermissionsLauncher =
+    registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+        if (!granted.values.all { it }) {
+            Log.e(TAG, "Permissions denied")
         }
     }
 }
 
 @RequiresApi(Build.VERSION_CODES.R)
 @Composable
-fun Greeting(modifier: Modifier = Modifier) {
-    val txtMsg = remember { mutableStateOf("") }
-    val foundUUID = remember { mutableStateOf("")}
+fun ClientUI(
+    foundUUID: MutableState<String>,
+    messages: List<String>,
+    onScan: () -> Unit,
+    onSend: (String) -> Unit
+) {
     val ctx = LocalContext.current
     val view = LocalView.current
-    val messages = remember { mutableListOf<String>() } //ref lab 7
-    //TODO send msg to server, get automatic response back
+    val typedMessage = remember { mutableStateOf("") }
 
-    Column(modifier = modifier) {
-        //This button opens the QR scanner:
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+
+        // SCAN QR BUTTON
         Button(onClick = {
             val options = GmsBarcodeScannerOptions.Builder()
-                .setBarcodeFormats(
-                    Barcode.FORMAT_QR_CODE
-                )
+                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
                 .build()
 
             val scanner = GmsBarcodeScanning.getClient(ctx, options)
 
             scanner.startScan()
                 .addOnSuccessListener { barcode ->
-                    val rawValue = barcode.rawValue
-                    if (!rawValue.isNullOrEmpty()) {
-                        foundUUID.value = rawValue
+                    val raw = barcode.rawValue
+                    if (!raw.isNullOrEmpty()) {
+                        foundUUID.value = raw
                         view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
                     }
                 }
                 .addOnCanceledListener {
-                    // Task canceled, nothing found
                     view.performHapticFeedback(HapticFeedbackConstants.REJECT)
                 }
-                .addOnFailureListener { exception ->
-                    Log.e("BarcodeScan", "Scan failed", exception)
+                .addOnFailureListener { e ->
+                    Log.e("BarcodeScan", "Scan failed", e)
                     view.performHapticFeedback(HapticFeedbackConstants.REJECT)
                 }
         }) {
             Text("Scan QR Code")
         }
 
-        //when the UUID string is not empty, show the UUID:
-        if(foundUUID.value.isNotEmpty()) {
-            Text("Scanned UUID: ${foundUUID.value}")
-            LazyColumn {
-                items(messages.size) { index ->
-                    Text(text = "Item: ${items[index]}")
+        Spacer(Modifier.padding(8.dp))
+
+        // SHOW UUID + CONNECT BUTTON
+        if (foundUUID.value.isNotEmpty()) {
+            Text("UUID: ${foundUUID.value}")
+
+            Spacer(Modifier.padding(8.dp))
+
+            Button(onClick = onScan) {
+                Text("Connect to Device")
+            }
+
+            Spacer(Modifier.padding(12.dp))
+
+            Text("Messages:")
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = 8.dp)
+            ) {
+                items(messages.size) { i ->
+                    Text(messages[i])
                 }
             }
+
             Row {
                 TextField(
-                    value = txtMsg.value,
-                    onValueChange = {
-                        txtMsg.value = it
-                    },
-                    placeholder = { Text("Type Here...") }
+                    modifier = Modifier.weight(1f),
+                    value = typedMessage.value,
+                    onValueChange = { typedMessage.value = it },
+                    placeholder = { Text("Type a message") }
                 )
+
+                Spacer(Modifier.padding(4.dp))
+
                 Button(onClick = {
-                    // Send message somehow
+                    val txt = typedMessage.value.trim()
+                    if (txt.isNotEmpty()) {
+                        onSend(txt)
+                        typedMessage.value = ""
+                    }
                 }) {
                     Text("Send")
                 }
             }
         }
-    }
-}
-
-@RequiresApi(Build.VERSION_CODES.R)
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    Bluetooth_ClientTheme() {
-        Greeting()
     }
 }
